@@ -4,10 +4,12 @@ import {
   testComponentInvariants,
   testMixinLifecycle,
   testStoreInvariants,
+  testStoreInvariantsAsync,
 } from '@geastack-community/geapbt'
 import Checkbox from '../src/checkbox'
 import { withFoo, withSelectable } from '../src/mixins'
 import { CounterStore } from '../src/counter-store'
+import { AsyncCounterStore } from '../src/async-counter-store'
 
 it('keeps the counter non-negative through randomized action sequences', () => {
   testStoreInvariants(CounterStore, {
@@ -20,6 +22,22 @@ it('keeps the counter non-negative through randomized action sequences', () => {
     runs: 250,
     seed: 20260926,
     invariants: (store) => {
+      expect(store.count).toBeGreaterThanOrEqual(0)
+    },
+  })
+})
+
+it('awaits asynchronous store actions before checking invariants', async () => {
+  await testStoreInvariantsAsync(AsyncCounterStore, {
+    actions: {
+      reset: [],
+      increment: [],
+      setCount: [integer({ min: -500, max: 500 })],
+    },
+    runs: 100,
+    seed: 20260927,
+    invariants: async (store) => {
+      await Promise.resolve()
       expect(store.count).toBeGreaterThanOrEqual(0)
     },
   })

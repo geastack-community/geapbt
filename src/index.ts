@@ -46,6 +46,12 @@ export type StoreInvariantOptions<T extends object = object> = TestOptions & {
   maxActions?: number
 }
 
+export type StoreAsyncInvariantOptions<T extends object = object> = TestOptions & {
+  actions: StoreActionInputs<T>
+  invariants: (store: T) => void | Promise<void>
+  maxActions?: number
+}
+
 type Constructable<T extends object> = new () => T
 type MixinConstructor = new (...args: any[]) => Component
 
@@ -115,8 +121,53 @@ function invokeRequired(target: object, name: string, args: unknown[] = []): voi
   assertSynchronous(Reflect.apply(method, target, args), name)
 }
 
+async function invokeAsync(
+  target: object,
+  name: string,
+  args: unknown[] = [],
+  required = false,
+): Promise<void> {
+  const method = getMethod(target, name)
+  if (!method) {
+    if (required) throw new TypeError(`${name} is not a function`)
+    return
+  }
+  await Reflect.apply(method, target, args)
+}
+
 function assertInvariants<T extends object>(invariants: (value: T) => void, value: T): void {
   assertSynchronous(invariants(value), 'invariants')
+}
+
+function createStoreSequences<T extends object>(
+  actions: StoreActionInputs<T>,
+  maxActionsOption: number | undefined,
+): { actionNames: string[]; sequences: fc.Arbitrary<{ name: string; args: unknown[] }[]> } {
+  const actionNames = Object.keys(actions)
+  const maxActions = maxActionsOption ?? Math.max(1, actionNames.length * 5)
+
+  if (!Number.isInteger(maxActions) || maxActions < 0) {
+    throw new RangeError('maxActions must be a non-negative integer')
+  }
+
+  const actionArbitraries = actionNames.map((name) => {
+    const args = actions[name as keyof T & string]
+    if (!Array.isArray(args)) {
+      throw new TypeError(`Arguments for store action "${name}" must be an array`)
+    }
+    const argsArbitrary =
+      args.length === 0
+        ? fc.constant([] as unknown[])
+        : fc.tuple(...args.map(toArbitrary))
+    return argsArbitrary.map((generatedArgs) => ({ name, args: generatedArgs }))
+  })
+
+  const sequences =
+    actionArbitraries.length === 0 || maxActions === 0
+      ? fc.constant([] as { name: string; args: unknown[] }[])
+      : fc.array(fc.oneof(...actionArbitraries), { minLength: 1, maxLength: maxActions })
+
+  return { actionNames, sequences }
 }
 
 async function waitForComponentUpdates(): Promise<void> {
@@ -224,29 +275,10 @@ export function testStoreInvariants<T extends object>(
   StoreType: Constructable<T>,
   options: StoreInvariantOptions<T>,
 ): void {
-  const actionNames = Object.keys(options.actions)
-  const maxActions = options.maxActions ?? Math.max(1, actionNames.length * 5)
-
-  if (!Number.isInteger(maxActions) || maxActions < 0) {
-    throw new RangeError('maxActions must be a non-negative integer')
-  }
-
-  const actionArbitraries = actionNames.map((name) => {
-    const args = options.actions[name as keyof T & string]
-    if (!Array.isArray(args)) {
-      throw new TypeError(`Arguments for store action "${name}" must be an array`)
-    }
-    const argsArbitrary =
-      args.length === 0
-        ? fc.constant([] as unknown[])
-        : fc.tuple(...args.map(toArbitrary))
-    return argsArbitrary.map((generatedArgs) => ({ name, args: generatedArgs }))
-  })
-
-  const sequences =
-    actionArbitraries.length === 0 || maxActions === 0
-      ? fc.constant([] as { name: string; args: unknown[] }[])
-      : fc.array(fc.oneof(...actionArbitraries), { minLength: 1, maxLength: maxActions })
+  const { actionNames, sequences } = createStoreSequences(
+    options.actions,
+    options.maxActions,
+  )
 
   fc.assert(
     fc.property(sequences, (sequence) => {
@@ -266,6 +298,43 @@ export function testStoreInvariants<T extends object>(
         }
       } finally {
         invoke(store, 'dispose')
+      }
+    }),
+    propertyOptions<[{ name: string; args: unknown[] }[]]>(options),
+  )
+}
+
+/**
+ * Run randomized store action sequences, awaiting each action and invariant
+ * before continuing to the next state.
+ */
+export async function testStoreInvariantsAsync<T extends object>(
+  StoreType: Constructable<T>,
+  options: StoreAsyncInvariantOptions<T>,
+): Promise<void> {
+  const { actionNames, sequences } = createStoreSequences(
+    options.actions,
+    options.maxActions,
+  )
+
+  await fc.assert(
+    fc.asyncProperty(sequences, async (sequence) => {
+      const store = new StoreType()
+      try {
+        for (const name of actionNames) {
+          if (!getMethod(store, name)) {
+            throw new TypeError(`Store action "${name}" is not a function`)
+          }
+        }
+        await invokeAsync(store, 'flushSync')
+        await options.invariants(store)
+        for (const action of sequence) {
+          await invokeAsync(store, action.name, action.args, true)
+          await invokeAsync(store, 'flushSync')
+          await options.invariants(store)
+        }
+      } finally {
+        await invokeAsync(store, 'dispose')
       }
     }),
     propertyOptions<[{ name: string; args: unknown[] }[]]>(options),

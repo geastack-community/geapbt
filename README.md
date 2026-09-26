@@ -6,7 +6,7 @@
 > geastack-community domain and package namespace.
 
 `@geastack-community/geapbt` is a property-based test helper for Gea mixins, components, and stores. It has no direct dependencies on Vitest or Jest; when called, it executes tests on the spot. Exceptions are propagated to the calling test runner.
-Store actions, mixin lifecycle hooks, and store/mixin invariants are synchronous. Component invariants may be asynchronous; `testComponentInvariants` returns a Promise and should be awaited so Gea's batched DOM updates can settle before the next check.
+`testStoreInvariants` and mixin lifecycle hooks are synchronous. Their asynchronous counterparts return Promises and should be awaited. Component invariants may also be asynchronous; `testComponentInvariants` waits for Gea's batched DOM updates before the next check.
 
 ## Install
 
@@ -75,6 +75,37 @@ test('UserStore invariants', () => {
 
 You can also specify arguments in the form of `() => value`, as shown in the example. Since functions that call `Math.random()` directly are not controlled by the fast-check seed, we recommend using `Arbitrary` for reproducible tests.
 The maximum length of the action sequence can be adjusted using `maxActions`.
+
+## Asynchronous store invariants
+
+Use `testStoreInvariantsAsync` when actions or invariants return Promises. Each
+action, optional `flushSync()`, invariant check, and `dispose()` is awaited
+before continuing, so randomized operations cannot race one another.
+
+```ts
+import { expect, test } from 'vitest'
+import { integer } from 'fast-check'
+import { testStoreInvariantsAsync } from '@geastack-community/geapbt'
+import UserStore from './UserStore'
+
+test('async UserStore invariants', async () => {
+  await testStoreInvariantsAsync(UserStore, {
+    actions: {
+      refresh: [],
+      setAge: [integer({ min: 0, max: 100 })],
+    },
+    runs: 200,
+    invariants: async (store) => {
+      await Promise.resolve()
+      expect(store.age).toBeGreaterThanOrEqual(0)
+    },
+  })
+})
+```
+
+Action arguments use the same `PropertyInput` values and fast-check arbitraries
+as the synchronous helper. Rejected actions, invariant checks, and disposal
+errors fail the property and are reported by fast-check.
 
 ## Mixin lifecycle
 

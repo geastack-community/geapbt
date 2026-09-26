@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { integer } from 'fast-check'
 import { Component } from '@geajs/core'
-import { testComponentInvariants, testMixinLifecycle, testStoreInvariants } from './index'
+import {
+  testComponentInvariants,
+  testMixinLifecycle,
+  testStoreInvariants,
+  testStoreInvariantsAsync,
+} from './index'
 
 describe('testMixinLifecycle', () => {
   it('runs creation and disposal for every run', () => {
@@ -155,5 +161,79 @@ describe('testStoreInvariants', () => {
         invariants: (store) => expect(store.age).toBeGreaterThanOrEqual(0),
       }),
     ).toThrow()
+  })
+})
+
+describe('testStoreInvariantsAsync', () => {
+  it('awaits actions and invariants sequentially', async () => {
+    const checked = new Map<object, number>()
+
+    class AsyncStore {
+      static disposed = 0
+      value = 0
+      activeActions = 0
+
+      async setValue(value: number): Promise<void> {
+        this.activeActions += 1
+        expect(this.activeActions).toBe(1)
+        await Promise.resolve()
+        this.value = value
+        this.activeActions -= 1
+      }
+
+      async dispose(): Promise<void> {
+        await Promise.resolve()
+        expect(this.activeActions).toBe(0)
+        AsyncStore.disposed += 1
+      }
+    }
+
+    await testStoreInvariantsAsync(AsyncStore, {
+      actions: { setValue: [integer({ min: 0, max: 100 })] },
+      runs: 20,
+      seed: 103,
+      invariants: async (store) => {
+        await Promise.resolve()
+        expect(store.value).toBeGreaterThanOrEqual(0)
+        checked.set(store, (checked.get(store) ?? 0) + 1)
+      },
+    })
+
+    expect([...checked.values()].every((count) => count > 1)).toBe(true)
+    expect(AsyncStore.disposed).toBe(20)
+  })
+
+  it('propagates rejected asynchronous actions', async () => {
+    class BrokenAsyncStore {
+      async fail(): Promise<void> {
+        throw new Error('action failed')
+      }
+    }
+
+    await expect(
+      testStoreInvariantsAsync(BrokenAsyncStore, {
+        actions: { fail: [] },
+        runs: 1,
+        seed: 2,
+        invariants: () => undefined,
+      }),
+    ).rejects.toThrow()
+  })
+
+  it('propagates rejected asynchronous invariants', async () => {
+    class AsyncStore {
+      async noop(): Promise<void> {}
+    }
+
+    await expect(
+      testStoreInvariantsAsync(AsyncStore, {
+        actions: { noop: [] },
+        runs: 1,
+        seed: 3,
+        invariants: async () => {
+          throw new Error('invariant failed')
+        },
+      }),
+    ).rejects.toThrow()
   })
 })

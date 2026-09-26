@@ -37,6 +37,8 @@ initial checked state.
 
 - `testStoreInvariants` tries randomized `reset`, `increment`, `decrement`, and
   bounded/unbounded `setCount` inputs across action sequences.
+- `testStoreInvariantsAsync` awaits randomized asynchronous store actions and
+  asynchronous invariants before proceeding to the next operation.
 - `testComponentInvariants` generates checked/disabled props, renders the
   checkbox, performs click/Space interactions, waits for Gea's batched DOM
   updates, and checks the ARIA contract after each state transition.

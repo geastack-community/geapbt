@@ -1,6 +1,6 @@
 {
   "name": "@geastack-community/geapbt",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Property-based testing tool for Gea stores, mixins, and components",
   "type": "module",
   "files": [
