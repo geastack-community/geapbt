@@ -21,6 +21,7 @@
     "test:watch": "vitest src",
     "typecheck": "tsc --noEmit"
   },
+  "author": "GeaStack Community",
   "dependencies": {
     "fast-check": "^4.10.2"
   },
@@ -40,5 +41,8 @@
     "geastack",
     "geajs",
     "test"
-  ]
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }
