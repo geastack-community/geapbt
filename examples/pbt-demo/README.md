@@ -41,7 +41,9 @@ initial checked state.
   asynchronous invariants before proceeding to the next operation.
 - `testComponentInvariants` generates checked/disabled props, renders the
   checkbox, performs click/Space interactions, waits for Gea's batched DOM
-  updates, and checks the ARIA contract after each state transition.
+  updates, and checks the ARIA contract after each state transition. The
+  `{ setChecked: [boolean()] }` interaction also exercises an argument-taking
+  component method using the same per-argument generator format as Store actions.
 - `testMixinLifecycle` composes two Gea `Component` mixins and checks both
   `created()` hooks through 100 runs.
 

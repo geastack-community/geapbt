@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { integer } from 'fast-check'
+import { boolean, integer } from 'fast-check'
 import { Component } from '@geajs/core'
 import {
   testComponentInvariants,
@@ -70,6 +70,8 @@ describe('testComponentInvariants', () => {
       static activations = 0
       props: Record<string, unknown> = {}
       activations = 0
+      cleared = false
+      setCheckedValues: boolean[] = []
       el = {
         click: () => {
           this.activations += 1
@@ -88,18 +90,34 @@ describe('testComponentInvariants', () => {
       render(): void {
         rendered += 1
       }
+
+      clear(): void {
+        this.cleared = true
+      }
+
+      setChecked(checked: boolean): void {
+        this.setCheckedValues.push(checked)
+      }
     }
 
     try {
       await testComponentInvariants(Checkbox, {
         props: { disabled: 'boolean', checked: 'boolean' },
-        interactions: ['click', 'pressSpace'],
+        interactions: [
+          'click',
+          'pressSpace',
+          { clear: [] },
+          { setChecked: [boolean()] },
+        ],
         runs: 20,
         seed: 1234,
         invariants: (component) => {
           expect(typeof component.props.disabled).toBe('boolean')
           expect(typeof component.props.checked).toBe('boolean')
           expect(component.activations).toBeGreaterThanOrEqual(0)
+          expect(component.setCheckedValues.every((value) => typeof value === 'boolean')).toBe(
+            true,
+          )
         },
       })
     } finally {
@@ -111,6 +129,127 @@ describe('testComponentInvariants', () => {
     expect(appended).toBe(20)
     expect(removed).toBe(20)
     expect(Checkbox.activations).toBeGreaterThan(0)
+  })
+
+  it('generates combinations for methods with multiple arguments', async () => {
+    class RangeComponent {
+      start = 0
+      end = 10
+
+      setRange(start: number, end: number): void {
+        this.start = start
+        this.end = end
+      }
+    }
+
+    await testComponentInvariants(RangeComponent, {
+      interactions: [
+        { setRange: [integer({ min: 0, max: 10 }), integer({ min: 10, max: 20 })] },
+      ],
+      runs: 20,
+      seed: 89,
+      invariants: (component) => {
+        expect(component.start).toBeGreaterThanOrEqual(0)
+        expect(component.start).toBeLessThanOrEqual(10)
+        expect(component.end).toBeGreaterThanOrEqual(10)
+        expect(component.end).toBeLessThanOrEqual(20)
+      },
+    })
+  })
+
+  it('uses an argument generator to call a one-argument method', async () => {
+    class ComponentWithAction {
+      value = 2
+
+      setValue(value: number): void {
+        this.value = value
+      }
+    }
+
+    await testComponentInvariants(ComponentWithAction, {
+      interactions: [{ setValue: [integer({ min: 2, max: 4 })] }],
+      runs: 20,
+      seed: 321,
+      invariants: (component) => {
+        expect(component.value).toBeGreaterThanOrEqual(2)
+        expect(component.value).toBeLessThanOrEqual(4)
+      },
+    })
+  })
+
+  it('supports array values for single-argument methods', async () => {
+    class TagsComponent {
+      tags: string[] = ['initial']
+
+      setTags(tags: string[]): void {
+        this.tags = tags
+      }
+    }
+
+    await testComponentInvariants(TagsComponent, {
+      interactions: [{ setTags: [() => ['profile', 'security']] }],
+      runs: 20,
+      seed: 322,
+      invariants: (component) => {
+        expect([['initial'], ['profile', 'security']]).toContainEqual(component.tags)
+      },
+    })
+  })
+
+  it('uses an object descriptor for zero-argument component methods', async () => {
+    class ResettableComponent {
+      static resets = 0
+
+      reset(): void {
+        ResettableComponent.resets += 1
+      }
+    }
+
+    ResettableComponent.resets = 0
+    await testComponentInvariants(ResettableComponent, {
+      interactions: [{ reset: [] }],
+      runs: 5,
+      maxInteractions: 1,
+      invariants: () => {},
+    })
+
+    expect(ResettableComponent.resets).toBe(5)
+  })
+
+  it('distinguishes standard interactions from methods with the same name', async () => {
+    class ClickComponent {
+      static domClicks = 0
+      static methodClicks = 0
+
+      el = {
+        click: () => {
+          ClickComponent.domClicks += 1
+        },
+        dispatchEvent: () => true,
+      }
+
+      click(): void {
+        ClickComponent.methodClicks += 1
+      }
+    }
+
+    ClickComponent.domClicks = 0
+    ClickComponent.methodClicks = 0
+    await testComponentInvariants(ClickComponent, {
+      interactions: ['click'],
+      runs: 1,
+      maxInteractions: 1,
+      invariants: () => {},
+    })
+    await testComponentInvariants(ClickComponent, {
+      interactions: [{ click: [] }],
+      runs: 1,
+      maxInteractions: 1,
+      invariants: () => {},
+    })
+
+    expect(ClickComponent.domClicks).toBe(1)
+    expect(ClickComponent.methodClicks).toBe(1)
   })
 })
 

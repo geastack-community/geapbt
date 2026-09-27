@@ -47,6 +47,30 @@ Each component is rendered after setting its generated props for each run, and i
 Gea batches DOM updates after events, so this helper returns a Promise and must be awaited.
 Invariant callbacks may also be async. `click` dispatches a click event on the root element,
 and `pressSpace` dispatches keydown and keyup events for the Space key.
+Component methods are specified by name with an array of argument generators,
+following the same argument format as Store actions. Use an empty array for
+methods without arguments:
+
+```ts
+import { integer } from 'fast-check'
+
+interactions: [
+  'click',
+  { reset: [] },
+  { selectTab: ['profile'] },
+  { setRange: [integer({ min: 0, max: 10 }), integer({ min: 0, max: 20 })] },
+]
+```
+
+Each array position describes one method argument, so multiple arguments use
+the same flat tuple format as Store actions. Argument inputs accept the same
+forms as generated props and Store actions: primitive type names, constant
+values, functions, or `Arbitrary` values such as `boolean()` and `integer()`
+from `fast-check`. A literal string matching a primitive type name can be
+provided through a function, for example `() => 'boolean'`. Interaction method
+names and their argument types are checked against the component. A string
+entry such as `'click'` is reserved for a standard interaction; use
+`{ click: [] }` to invoke a component's own zero-argument `click()` method.
 
 ## Store invariants
 

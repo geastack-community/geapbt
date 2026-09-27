@@ -21,6 +21,11 @@ export default class Checkbox extends Component {
     if (!this.props.disabled) this.checked = !this.checked
   }
 
+  setChecked(checked: boolean): void {
+    this.interactionAttempts += 1
+    if (!this.props.disabled) this.checked = checked
+  }
+
   onKeyDown(event: KeyboardEvent): void {
     if (event.key === ' ') {
       event.preventDefault()

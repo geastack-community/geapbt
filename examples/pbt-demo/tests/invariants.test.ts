@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { integer } from 'fast-check'
+import { boolean, integer } from 'fast-check'
 import {
   testComponentInvariants,
   testMixinLifecycle,
@@ -51,7 +51,11 @@ it('keeps checkbox ARIA state consistent through randomized interactions', async
       checked: 'boolean',
       disabled: 'boolean',
     },
-    interactions: ['click', 'pressSpace'],
+    interactions: [
+      'click',
+      'pressSpace',
+      { setChecked: [boolean()] },
+    ],
     runs: 100,
     seed: 42,
     invariants: (component) => {

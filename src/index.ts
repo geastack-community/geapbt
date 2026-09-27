@@ -29,10 +29,27 @@ export type MixinLifecycleOptions = TestOptions & {
 
 export type ComponentInvariantOptions<T extends object = object> = TestOptions & {
   props?: Record<string, PropertyInput>
-  interactions?: readonly ('click' | 'pressSpace')[]
+  interactions?: readonly ComponentInteraction<T>[]
   invariants: (component: T) => void | Promise<void>
   maxInteractions?: number
 }
+
+type ComponentMethodKeys<T extends object> = {
+  [K in keyof T & string]: T[K] extends (...args: any[]) => unknown ? K : never
+}[keyof T & string]
+
+type ComponentMethodInteraction<T extends object> = {
+  [K in ComponentMethodKeys<T>]: {
+    [P in K]: T[K] extends (...args: infer Args) => unknown
+      ? { [Index in keyof Args]: PropertyInput }
+      : never
+  } & { [P in Exclude<ComponentMethodKeys<T>, K>]?: never }
+}[ComponentMethodKeys<T>]
+
+export type ComponentInteraction<T extends object> =
+  | 'click'
+  | 'pressSpace'
+  | ComponentMethodInteraction<T>
 
 export type StoreActionInputs<T extends object> = Partial<{
   [K in keyof T & string]: T[K] extends (...args: infer Args) => unknown
@@ -54,6 +71,9 @@ export type StoreAsyncInvariantOptions<T extends object = object> = TestOptions 
 
 type Constructable<T extends object> = new () => T
 type MixinConstructor = new (...args: any[]) => Component
+type GeneratedInteraction =
+  | { kind: 'click' | 'pressSpace' }
+  | { kind: 'method'; name: string; args: unknown[] }
 
 function getRuns(options: TestOptions): number {
   const runs = options.runs ?? 100
@@ -91,6 +111,48 @@ function toArbitrary(input: PropertyInput): fc.Arbitrary<unknown> {
       return fc.integer()
     default:
       return fc.constant(input)
+  }
+}
+
+function toInteractionArbitrary<T extends object>(
+  interaction: ComponentInteraction<T>,
+): fc.Arbitrary<GeneratedInteraction> {
+  if (interaction === 'click') {
+    return fc.constant({ kind: 'click' })
+  }
+  if (interaction === 'pressSpace') {
+    return fc.constant({ kind: 'pressSpace' })
+  }
+
+  if (interaction === null || typeof interaction !== 'object' || Array.isArray(interaction)) {
+    throw new TypeError('Each custom component interaction must be a single-method object')
+  }
+
+  const entries = Object.entries(interaction)
+  if (entries.length !== 1) {
+    throw new TypeError('Each custom component interaction must specify exactly one method')
+  }
+
+  const [name, args] = entries[0]
+  if (!Array.isArray(args)) {
+    throw new TypeError(`Arguments for component interaction "${name}" must be an array`)
+  }
+
+  const argsArbitrary =
+    args.length === 0 ? fc.constant([] as unknown[]) : fc.tuple(...args.map(toArbitrary))
+  return argsArbitrary.map((generatedArgs) => ({ kind: 'method', name, args: generatedArgs }))
+}
+
+function validateComponentInteractions<T extends object>(
+  component: T,
+  interactions: readonly ComponentInteraction<T>[],
+): void {
+  for (const interaction of interactions) {
+    if (interaction === 'click' || interaction === 'pressSpace') continue
+    const name = Object.keys(interaction)[0]
+    if (!name || !getMethod(component, name)) {
+      throw new TypeError(`Component interaction "${name ?? ''}" is not a function`)
+    }
   }
 }
 
@@ -225,25 +287,26 @@ export async function testComponentInvariants<T extends object>(
   if (!Number.isInteger(maxInteractions) || maxInteractions < 0) {
     throw new RangeError('maxInteractions must be a non-negative integer')
   }
-  for (const interaction of interactions) {
-    if (interaction !== 'click' && interaction !== 'pressSpace') {
-      throw new TypeError(`Unsupported component interaction: ${String(interaction)}`)
-    }
-  }
+  const interactionArbitraries = interactions.map((interaction) =>
+    toInteractionArbitrary(interaction),
+  )
+  const sequenceArbitrary =
+    interactionArbitraries.length === 0
+      ? fc.constant([] as GeneratedInteraction[])
+      : fc.array(fc.oneof(...interactionArbitraries), {
+          minLength: maxInteractions === 0 ? 0 : 1,
+          maxLength: maxInteractions,
+        })
 
   await fc.assert(
     fc.asyncProperty(
       propsArbitrary,
-      interactions.length === 0
-        ? fc.constant([] as ('click' | 'pressSpace')[])
-        : fc.array(fc.constantFrom(...interactions), {
-            minLength: maxInteractions === 0 ? 0 : 1,
-            maxLength: maxInteractions,
-          }),
+      sequenceArbitrary,
       async (generatedProps, generatedInteractions) => {
         const component = new ComponentType()
         let host: HTMLElement | undefined
         try {
+          validateComponentInteractions(component, interactions)
           host = mountComponent(component, generatedProps)
           invoke(component, 'flushSync')
           await waitForComponentUpdates()
@@ -263,7 +326,7 @@ export async function testComponentInvariants<T extends object>(
         }
       },
     ),
-    propertyOptions<[Record<string, unknown>, ('click' | 'pressSpace')[]]>(options),
+    propertyOptions<[Record<string, unknown>, GeneratedInteraction[]]>(options),
   )
 }
 
@@ -369,14 +432,19 @@ function mountComponent<T extends object>(
 
 function performInteraction(
   component: object,
-  interaction: 'click' | 'pressSpace',
+  interaction: GeneratedInteraction,
 ): void {
-  const root = Reflect.get(component, 'el')
-  if (!isEventTarget(root)) {
-    throw new Error(`Cannot perform ${interaction}: component has no rendered root element`)
+  if (interaction.kind === 'method') {
+    invokeRequired(component, interaction.name, interaction.args)
+    return
   }
 
-  if (interaction === 'click') {
+  const root = Reflect.get(component, 'el')
+  if (!isEventTarget(root)) {
+    throw new Error(`Cannot perform ${interaction.kind}: component has no rendered root element`)
+  }
+
+  if (interaction.kind === 'click') {
     if (typeof Reflect.get(root, 'click') === 'function') {
       invoke(root, 'click')
       return
