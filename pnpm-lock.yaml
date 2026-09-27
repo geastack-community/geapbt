@@ -15,6 +15,9 @@ importers:
       '@geajs/core':
         specifier: ^1.4.0
         version: 1.4.3
+      '@geastack-community/utils':
+        specifier: ^0.0.4
+        version: 0.0.4(@geajs/core@1.4.3)
       '@types/node':
         specifier: ^26.6.3
         version: 26.6.3
@@ -188,6 +191,11 @@ packages:
 
   '@geajs/core@1.4.3':
     resolution: {integrity: sha512-TtJQAiYMHcERu17XZb+phyD+ECKalRGFxRXLnUKGeAsKwYKpUfXhIdotBFC1JroyLYZ+CaOOhMfPvn2mBKK+Ig==}
+
+  '@geastack-community/utils@0.0.4':
+    resolution: {integrity: sha512-VnbW6wKW1/XjpOgMOJL9Vq86l+CM5nquZ75ZYOeJMgiB01c5nSSetKcsVwTQH2E2OXQloGkMRISSxflAVOx7Bg==}
+    peerDependencies:
+      '@geajs/core': ^1.4.0
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -995,6 +1003,10 @@ snapshots:
   '@geajs/core@1.4.3':
     dependencies:
       '@types/react': 19.3.0
+
+  '@geastack-community/utils@0.0.4(@geajs/core@1.4.3)':
+    dependencies:
+      '@geajs/core': 1.4.3
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:

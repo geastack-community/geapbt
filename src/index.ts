@@ -1,4 +1,5 @@
 import { Component } from '@geajs/core'
+import type { ComponentConstructor, Constructor, Mixin } from '@geastack-community/utils'
 import * as fc from 'fast-check'
 
 export type PropertyInput =
@@ -17,10 +18,6 @@ export type TestOptions = {
   runs?: number
   seed?: number
 }
-
-export type Mixin = <TBase extends new (...args: any[]) => Component>(
-  base: TBase,
-) => new (...args: ConstructorParameters<TBase>) => Component
 
 export type MixinLifecycleOptions = TestOptions & {
   mixins: readonly Mixin[]
@@ -89,8 +86,6 @@ export type StoreAsyncInvariantOptions<T extends object = object> = TestOptions 
   maxActions?: number
 }
 
-type Constructable<T extends object> = new () => T
-type MixinConstructor = new (...args: any[]) => Component
 type GeneratedInteraction =
   | { kind: 'standard'; name: string; options: Record<string, unknown> }
   | { kind: 'method'; name: string; args: unknown[] }
@@ -423,7 +418,7 @@ export function testMixinLifecycle(options: MixinLifecycleOptions): void {
 
   fc.assert(
     fc.property(fc.constant(options.mixins), (mixins) => {
-      let Mixed: MixinConstructor = Component
+      let Mixed: ComponentConstructor = Component
       for (const mixin of mixins) {
         Mixed = mixin(Mixed)
       }
@@ -445,7 +440,7 @@ export function testMixinLifecycle(options: MixinLifecycleOptions): void {
  * supplied invariant before and after each interaction.
  */
 export async function testComponentInvariants<T extends object>(
-  ComponentType: Constructable<T>,
+  ComponentType: Constructor<T>,
   options: ComponentInvariantOptions<T>,
 ): Promise<void> {
   const props = options.props ?? {}
@@ -531,7 +526,7 @@ export async function testComponentInvariants<T extends object>(
  * after every action.
  */
 export function testStoreInvariants<T extends object>(
-  StoreType: Constructable<T>,
+  StoreType: Constructor<T>,
   options: StoreInvariantOptions<T>,
 ): void {
   const { actionNames, sequences } = createStoreSequences(
@@ -568,7 +563,7 @@ export function testStoreInvariants<T extends object>(
  * before continuing to the next state.
  */
 export async function testStoreInvariantsAsync<T extends object>(
-  StoreType: Constructable<T>,
+  StoreType: Constructor<T>,
   options: StoreAsyncInvariantOptions<T>,
 ): Promise<void> {
   const { actionNames, sequences } = createStoreSequences(

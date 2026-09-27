@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@geajs/core": "^1.4.0",
-    "@geastack-community/geapbt": "file:../.."
+    "@geastack-community/geapbt": "file:../..",
+    "@geastack-community/utils": "^0.0.4"
   },
   "devDependencies": {
     "@geajs/vite-plugin": "^1.4.3",

@@ -1,6 +1,6 @@
 {
   "name": "@geastack-community/geapbt",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Property-based testing tool for Gea stores, mixins, and components",
   "type": "module",
   "files": [
@@ -27,13 +27,15 @@
   },
   "devDependencies": {
     "@geajs/core": "^1.4.0",
+    "@geastack-community/utils": "^0.0.4",
     "@types/node": "^26.6.3",
     "tsup": "^8.0.0",
     "typescript": "^6.0.3",
     "vitest": "^5.0.2"
   },
   "peerDependencies": {
-    "@geajs/core": "^1.4.0"
+    "@geajs/core": "^1.4.0",
+    "@geastack-community/utils": "^0.0.4"
   },
   "keywords": [
     "pbt",
