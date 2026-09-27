@@ -56,6 +56,7 @@ import { string } from 'fast-check'
 interactions: [
   { typeText: { target: '[name="email"]', text: string() } },
   { pressKey: { target: '[name="email"]', key: ['Enter', 'Escape'] } },
+  { pressKey: { target: '[name="email"]', key: 'Shift', code: 'ShiftRight' } },
 ]
 ```
 
@@ -66,6 +67,10 @@ editable `<input>` or `<textarea>` and dispatches an `input` event.
 key. Text and key inputs accept a constant, a function, an `Arbitrary`, or a
 non-empty array of candidate values. These operations dispatch DOM events; they
 do not emulate a browser's full text-entry or keyboard default behavior.
+`code` is optional and represents the physical key position. Provide it when
+the semantic key and physical key differ, such as `key: 'Shift'` with
+`code: 'ShiftRight'`. When omitted, common letters, digits, punctuation, and
+named keys receive a best-effort physical-code mapping.
 Component methods are specified by name with an array of argument generators,
 following the same argument format as Store actions. Use an empty array for
 methods without arguments:

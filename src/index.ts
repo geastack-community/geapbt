@@ -65,6 +65,12 @@ type StandardInteractionDefinition<Options extends object> = {
   perform: (component: object, options: Record<string, unknown>) => void
 }
 
+type PressKeyOptions = {
+  target: string
+  key: StandardInteractionValue<string>
+  code?: StandardInteractionValue<string>
+}
+
 export type StoreActionInputs<T extends object> = Partial<{
   [K in keyof T & string]: T[K] extends (...args: infer Args) => unknown
     ? { [Index in keyof Args]: PropertyInput }
@@ -94,6 +100,7 @@ function defineStandardInteraction<Options extends object>(
   perform: (component: object, options: GeneratedStandardOptions<Options>) => void,
 ): StandardInteractionDefinition<Options> {
   const keys = Object.keys(shape)
+  const requiredKeys = keys.filter((key) => Reflect.get(shape, key) !== undefined)
   return {
     optionKeys: keys,
     generate(input) {
@@ -101,7 +108,7 @@ function defineStandardInteraction<Options extends object>(
         input === null ||
         typeof input !== 'object' ||
         Array.isArray(input) ||
-        keys.some((key) => !Object.hasOwn(input, key)) ||
+        requiredKeys.some((key) => !Object.hasOwn(input, key)) ||
         Object.keys(input).some((key) => !keys.includes(key))
       ) {
         throw new TypeError('Invalid standard interaction options')
@@ -155,12 +162,17 @@ const standardInteractions = {
       dispatchEvent(target, 'input')
     },
   ),
-  pressKey: defineStandardInteraction(
-    { target: '', key: '' as StandardInteractionValue<string> },
-    (component, { target: selector, key }) => {
+  pressKey: defineStandardInteraction<PressKeyOptions>(
+    {
+      target: '',
+      key: '' as StandardInteractionValue<string>,
+      code: undefined as StandardInteractionValue<string> | undefined,
+    },
+    (component, { target: selector, key, code }) => {
       const target = findInteractionTarget(component, selector, 'pressKey')
-      dispatchEvent(target, 'keydown', { key, code: getKeyboardCode(key) })
-      dispatchEvent(target, 'keyup', { key, code: getKeyboardCode(key) })
+      const keyboardCode = code ?? getKeyboardCode(key)
+      dispatchEvent(target, 'keydown', { key, code: keyboardCode })
+      dispatchEvent(target, 'keyup', { key, code: keyboardCode })
     },
   ),
 }
@@ -219,18 +231,28 @@ function toArbitrary(input: PropertyInput): fc.Arbitrary<unknown> {
   }
 }
 
-function toStandardInteractionArbitrary(input: unknown): fc.Arbitrary<unknown> {
-  if (input instanceof fc.Arbitrary) return input
+function toStandardInteractionArbitrary(
+  input: unknown,
+  interactionName = 'standard interaction',
+): fc.Arbitrary<string> {
+  const assertString = (value: unknown): string => {
+    if (typeof value !== 'string') {
+      throw new TypeError(`${interactionName} values must be strings`)
+    }
+    return value
+  }
+  if (input instanceof fc.Arbitrary) return input.map(assertString)
   if (typeof input === 'function') {
-    return fc.constant(null).map(() => (input as () => unknown)())
+    return fc.constant(null).map(() => assertString((input as () => unknown)()))
   }
   if (Array.isArray(input)) {
     if (input.length === 0) {
       throw new TypeError('Standard interaction values must provide at least one option')
     }
-    return fc.oneof(...input.map((value) => fc.constant(value)))
+    return fc.oneof(...input.map((value) => fc.constant(assertString(value))))
   }
-  return fc.constant(input)
+  if (input === undefined) return fc.constant(undefined as never)
+  return fc.constant(assertString(input))
 }
 
 function toInteractionArbitrary<T extends object>(
@@ -647,7 +669,20 @@ function getKeyboardCode(key: string): string {
   if (key === ' ') return 'Space'
   if (/^[a-z]$/i.test(key)) return `Key${key.toUpperCase()}`
   if (/^[0-9]$/.test(key)) return `Digit${key}`
-  return key
+  const codes: Record<string, string> = {
+    '-': 'Minus',
+    '=': 'Equal',
+    '[': 'BracketLeft',
+    ']': 'BracketRight',
+    '\\': 'Backslash',
+    ';': 'Semicolon',
+    "'": 'Quote',
+    ',': 'Comma',
+    '.': 'Period',
+    '/': 'Slash',
+    '`': 'Backquote',
+  }
+  return codes[key] ?? key
 }
 
 function isEventTarget(value: unknown): value is EventTarget & object {

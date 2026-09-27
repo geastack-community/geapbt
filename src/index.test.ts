@@ -319,6 +319,71 @@ describe('testComponentInvariants', () => {
     expect(events[1].key).toBe(events[0].key)
   })
 
+  it('uses an explicit physical code for modifier keys', async () => {
+    const events: Array<{ key: string; code: string }> = []
+    const target = {
+      dispatchEvent: (event: Event) => {
+        events.push({
+          key: String(Reflect.get(event, 'key')),
+          code: String(Reflect.get(event, 'code')),
+        })
+        return true
+      },
+    }
+    const root = {
+      matches: () => false,
+      querySelector: () => target,
+      dispatchEvent: () => true,
+    }
+    class ModifierComponent {
+      el = root
+    }
+
+    await testComponentInvariants(ModifierComponent, {
+      interactions: [
+        { pressKey: { target: 'button', key: 'Shift', code: 'ShiftRight' } },
+      ],
+      runs: 1,
+      maxInteractions: 1,
+      invariants: () => {},
+    })
+
+    expect(events).toEqual([
+      { key: 'Shift', code: 'ShiftRight' },
+      { key: 'Shift', code: 'ShiftRight' },
+    ])
+  })
+
+  it('maps punctuation keys to their physical codes when code is omitted', async () => {
+    const events: Array<{ key: string; code: string }> = []
+    const target = {
+      dispatchEvent: (event: Event) => {
+        events.push({
+          key: String(Reflect.get(event, 'key')),
+          code: String(Reflect.get(event, 'code')),
+        })
+        return true
+      },
+    }
+    const root = {
+      matches: () => false,
+      querySelector: () => target,
+      dispatchEvent: () => true,
+    }
+    class PunctuationComponent {
+      el = root
+    }
+
+    await testComponentInvariants(PunctuationComponent, {
+      interactions: [{ pressKey: { target: 'button', key: '-' } }],
+      runs: 1,
+      maxInteractions: 1,
+      invariants: () => {},
+    })
+
+    expect(events[0]).toEqual({ key: '-', code: 'Minus' })
+  })
+
   it('keeps standard descriptors distinct from same-named component methods', async () => {
     const calls: unknown[][] = []
     const input = {
