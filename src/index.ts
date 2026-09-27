@@ -34,6 +34,18 @@ export type ComponentInvariantOptions<T extends object = object> = TestOptions &
   maxInteractions?: number
 }
 
+type StandardInteractionValue<T> = T | readonly T[] | (() => T) | fc.Arbitrary<T>
+type GeneratedStandardValue<T> = T extends fc.Arbitrary<infer Value>
+  ? Value
+  : T extends () => infer Value
+    ? Value
+    : T extends readonly (infer Value)[]
+      ? Value
+      : T
+type GeneratedStandardOptions<Options> = {
+  [K in keyof Options]: GeneratedStandardValue<Options[K]>
+}
+
 type ComponentMethodKeys<T extends object> = {
   [K in keyof T & string]: T[K] extends (...args: any[]) => unknown ? K : never
 }[keyof T & string]
@@ -46,10 +58,12 @@ type ComponentMethodInteraction<T extends object> = {
   } & { [P in Exclude<ComponentMethodKeys<T>, K>]?: never }
 }[ComponentMethodKeys<T>]
 
-export type ComponentInteraction<T extends object> =
-  | 'click'
-  | 'pressSpace'
-  | ComponentMethodInteraction<T>
+type StandardInteractionDefinition<Options extends object> = {
+  readonly optionsType?: Options
+  readonly optionKeys: readonly string[]
+  generate: (input: unknown) => fc.Arbitrary<Record<string, unknown>>
+  perform: (component: object, options: Record<string, unknown>) => void
+}
 
 export type StoreActionInputs<T extends object> = Partial<{
   [K in keyof T & string]: T[K] extends (...args: infer Args) => unknown
@@ -72,8 +86,99 @@ export type StoreAsyncInvariantOptions<T extends object = object> = TestOptions 
 type Constructable<T extends object> = new () => T
 type MixinConstructor = new (...args: any[]) => Component
 type GeneratedInteraction =
-  | { kind: 'click' | 'pressSpace' }
+  | { kind: 'standard'; name: string; options: Record<string, unknown> }
   | { kind: 'method'; name: string; args: unknown[] }
+
+function defineStandardInteraction<Options extends object>(
+  shape: Options,
+  perform: (component: object, options: GeneratedStandardOptions<Options>) => void,
+): StandardInteractionDefinition<Options> {
+  const keys = Object.keys(shape)
+  return {
+    optionKeys: keys,
+    generate(input) {
+      if (
+        input === null ||
+        typeof input !== 'object' ||
+        Array.isArray(input) ||
+        keys.some((key) => !Object.hasOwn(input, key)) ||
+        Object.keys(input).some((key) => !keys.includes(key))
+      ) {
+        throw new TypeError('Invalid standard interaction options')
+      }
+      const arbitraries = Object.fromEntries(
+        keys.map((key) => [
+          key,
+          toStandardInteractionArbitrary(Reflect.get(input, key)),
+        ]),
+      ) as Record<string, fc.Arbitrary<unknown>>
+      return fc.record(arbitraries)
+    },
+    perform(component, options) {
+      perform(component, options as GeneratedStandardOptions<Options>)
+    },
+  }
+}
+
+const standardInteractions = {
+  click: defineStandardInteraction({}, (component) => {
+    const root = getInteractionRoot(component, 'click')
+    if (typeof Reflect.get(root, 'click') === 'function') {
+      invoke(root, 'click')
+      return
+    }
+    dispatchEvent(root, 'click')
+  }),
+  pressSpace: defineStandardInteraction({}, (component) => {
+    const root = getInteractionRoot(component, 'pressSpace')
+    dispatchEvent(root, 'keydown', { key: ' ', code: 'Space' })
+    dispatchEvent(root, 'keyup', { key: ' ', code: 'Space' })
+  }),
+  typeText: defineStandardInteraction(
+    { target: '', text: '' as StandardInteractionValue<string> },
+    (component, { target: selector, text }) => {
+      const target = findInteractionTarget(component, selector, 'typeText')
+      const tagName = Reflect.get(target, 'tagName')
+      const inputType = Reflect.get(target, 'type')
+      const textInputTypes = ['text', 'search', 'email', 'url', 'tel', 'password']
+      if (
+        (tagName !== 'INPUT' && tagName !== 'TEXTAREA') ||
+        (tagName === 'INPUT' && !textInputTypes.includes(String(inputType))) ||
+        Reflect.get(target, 'disabled') === true ||
+        Reflect.get(target, 'readOnly') === true
+      ) {
+        throw new TypeError(`Cannot type text into the selected ${String(tagName)} element`)
+      }
+      if (!Reflect.set(target, 'value', text)) {
+        throw new TypeError('Text input value could not be set')
+      }
+      dispatchEvent(target, 'input')
+    },
+  ),
+  pressKey: defineStandardInteraction(
+    { target: '', key: '' as StandardInteractionValue<string> },
+    (component, { target: selector, key }) => {
+      const target = findInteractionTarget(component, selector, 'pressKey')
+      dispatchEvent(target, 'keydown', { key, code: getKeyboardCode(key) })
+      dispatchEvent(target, 'keyup', { key, code: getKeyboardCode(key) })
+    },
+  ),
+}
+
+type StandardInteractionName = keyof typeof standardInteractions
+type StandardInteractionInput<Name extends StandardInteractionName> =
+  (typeof standardInteractions)[Name] extends StandardInteractionDefinition<infer Options>
+    ? Options
+    : never
+type StandardInteractions = {
+  [Name in StandardInteractionName]: keyof StandardInteractionInput<Name> extends never
+    ? Name
+    : { [Key in Name]: StandardInteractionInput<Name> }
+}[StandardInteractionName]
+
+export type ComponentInteraction<T extends object> =
+  | StandardInteractions
+  | ComponentMethodInteraction<T>
 
 function getRuns(options: TestOptions): number {
   const runs = options.runs ?? 100
@@ -114,14 +219,36 @@ function toArbitrary(input: PropertyInput): fc.Arbitrary<unknown> {
   }
 }
 
+function toStandardInteractionArbitrary(input: unknown): fc.Arbitrary<unknown> {
+  if (input instanceof fc.Arbitrary) return input
+  if (typeof input === 'function') {
+    return fc.constant(null).map(() => (input as () => unknown)())
+  }
+  if (Array.isArray(input)) {
+    if (input.length === 0) {
+      throw new TypeError('Standard interaction values must provide at least one option')
+    }
+    return fc.oneof(...input.map((value) => fc.constant(value)))
+  }
+  return fc.constant(input)
+}
+
 function toInteractionArbitrary<T extends object>(
   interaction: ComponentInteraction<T>,
 ): fc.Arbitrary<GeneratedInteraction> {
-  if (interaction === 'click') {
-    return fc.constant({ kind: 'click' })
-  }
-  if (interaction === 'pressSpace') {
-    return fc.constant({ kind: 'pressSpace' })
+  if (typeof interaction === 'string') {
+    if (!isStandardInteractionName(interaction)) {
+      throw new TypeError(`Unsupported standard component interaction "${interaction}"`)
+    }
+    const definition = standardInteractions[interaction as StandardInteractionName]
+    if (definition.optionKeys.length > 0) {
+      throw new TypeError(`Standard interaction "${interaction}" requires an options descriptor`)
+    }
+    return definition.generate({}).map((options) => ({
+      kind: 'standard',
+      name: interaction,
+      options,
+    }))
   }
 
   if (interaction === null || typeof interaction !== 'object' || Array.isArray(interaction)) {
@@ -134,6 +261,19 @@ function toInteractionArbitrary<T extends object>(
   }
 
   const [name, args] = entries[0]
+  if (
+    Object.hasOwn(standardInteractions, name) &&
+    args !== null &&
+    typeof args === 'object' &&
+    !Array.isArray(args)
+  ) {
+    const definition = standardInteractions[name as StandardInteractionName]
+    return definition.generate(args as Record<string, unknown>).map((options) => ({
+      kind: 'standard',
+      name,
+      options: options as Record<string, unknown>,
+    }))
+  }
   if (!Array.isArray(args)) {
     throw new TypeError(`Arguments for component interaction "${name}" must be an array`)
   }
@@ -143,13 +283,29 @@ function toInteractionArbitrary<T extends object>(
   return argsArbitrary.map((generatedArgs) => ({ kind: 'method', name, args: generatedArgs }))
 }
 
+function isStandardInteractionName(name: string): name is StandardInteractionName {
+  return Object.hasOwn(standardInteractions, name)
+}
+
 function validateComponentInteractions<T extends object>(
   component: T,
   interactions: readonly ComponentInteraction<T>[],
 ): void {
   for (const interaction of interactions) {
-    if (interaction === 'click' || interaction === 'pressSpace') continue
+    if (typeof interaction === 'string') {
+      if (
+        isStandardInteractionName(interaction) &&
+        standardInteractions[interaction].optionKeys.length === 0
+      ) {
+        continue
+      }
+      throw new TypeError(`Unsupported standard component interaction "${interaction}"`)
+    }
     const name = Object.keys(interaction)[0]
+    const value = name ? Reflect.get(interaction, name) : undefined
+    if (name && isStandardInteractionName(name) && value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      continue
+    }
     if (!name || !getMethod(component, name)) {
       throw new TypeError(`Component interaction "${name ?? ''}" is not a function`)
     }
@@ -456,23 +612,42 @@ function performInteraction(
     invokeRequired(component, interaction.name, interaction.args)
     return
   }
+  const definition = standardInteractions[interaction.name as StandardInteractionName]
+  definition.perform(component, interaction.options)
+}
 
+function getInteractionRoot(component: object, interactionName: string): EventTarget & object {
   const root = Reflect.get(component, 'el')
   if (!isEventTarget(root)) {
-    throw new Error(`Cannot perform ${interaction.kind}: component has no rendered root element`)
+    throw new Error(`Cannot perform ${interactionName}: component has no rendered root element`)
   }
+  return root
+}
 
-  if (interaction.kind === 'click') {
-    if (typeof Reflect.get(root, 'click') === 'function') {
-      invoke(root, 'click')
-      return
-    }
-    dispatchEvent(root, 'click')
-    return
+function findInteractionTarget(
+  component: object,
+  selector: string,
+  interactionName: string,
+): EventTarget & object {
+  const root = getInteractionRoot(component, interactionName)
+  const matches = Reflect.get(root, 'matches')
+  const querySelector = Reflect.get(root, 'querySelector')
+  if (typeof matches !== 'function' || typeof querySelector !== 'function') {
+    throw new TypeError(`Cannot find ${interactionName} target: component root is not an Element`)
   }
+  if (Reflect.apply(matches, root, [selector]) && isEventTarget(root)) return root
+  const target = Reflect.apply(querySelector, root, [selector])
+  if (!isEventTarget(target)) {
+    throw new Error(`Cannot find ${interactionName} target matching "${selector}"`)
+  }
+  return target
+}
 
-  dispatchEvent(root, 'keydown', { key: ' ', code: 'Space' })
-  dispatchEvent(root, 'keyup', { key: ' ', code: 'Space' })
+function getKeyboardCode(key: string): string {
+  if (key === ' ') return 'Space'
+  if (/^[a-z]$/i.test(key)) return `Key${key.toUpperCase()}`
+  if (/^[0-9]$/.test(key)) return `Digit${key}`
+  return key
 }
 
 function isEventTarget(value: unknown): value is EventTarget & object {

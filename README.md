@@ -47,6 +47,25 @@ Each component is rendered after setting its generated props for each run, and i
 Gea batches DOM updates after events, so this helper returns a Promise and must be awaited.
 Invariant callbacks may also be async. `click` dispatches a click event on the root element,
 and `pressSpace` dispatches keydown and keyup events for the Space key.
+Argument-taking standard interactions use an object descriptor, separate from
+the array descriptor for component methods:
+
+```ts
+import { string } from 'fast-check'
+
+interactions: [
+  { typeText: { target: '[name="email"]', text: string() } },
+  { pressKey: { target: '[name="email"]', key: ['Enter', 'Escape'] } },
+]
+```
+
+The target is a CSS selector resolved against the component's root element
+(the root itself is considered too). `typeText` sets the value of an enabled,
+editable `<input>` or `<textarea>` and dispatches an `input` event.
+`pressKey` dispatches bubbling `keydown` and `keyup` events with the selected
+key. Text and key inputs accept a constant, a function, an `Arbitrary`, or a
+non-empty array of candidate values. These operations dispatch DOM events; they
+do not emulate a browser's full text-entry or keyboard default behavior.
 Component methods are specified by name with an array of argument generators,
 following the same argument format as Store actions. Use an empty array for
 methods without arguments:

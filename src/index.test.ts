@@ -252,6 +252,111 @@ describe('testComponentInvariants', () => {
     expect(ClickComponent.methodClicks).toBe(1)
   })
 
+  it('types generated text into a selected input and dispatches input', async () => {
+    const events: string[] = []
+    const input = {
+      tagName: 'INPUT',
+      type: 'text',
+      value: '',
+      dispatchEvent: (event: Event) => {
+        events.push(event.type)
+        return true
+      },
+    }
+    const root = {
+      matches: () => false,
+      querySelector: (selector: string) => (selector === '[name="query"]' ? input : null),
+      dispatchEvent: () => true,
+    }
+    class SearchComponent {
+      el = root
+    }
+
+    await testComponentInvariants(SearchComponent, {
+      interactions: [{ typeText: { target: '[name="query"]', text: ['find me', 'search'] } }],
+      runs: 1,
+      maxInteractions: 1,
+      invariants: () => {},
+    })
+
+    expect(['find me', 'search']).toContain(input.value)
+    expect(events).toContain('input')
+  })
+
+  it('dispatches keydown and keyup with a generated key to a selected target', async () => {
+    const events: Array<{ type: string; key: string; code: string }> = []
+    const button = {
+      tagName: 'BUTTON',
+      dispatchEvent: (event: Event) => {
+        events.push({
+          type: event.type,
+          key: String(Reflect.get(event, 'key')),
+          code: String(Reflect.get(event, 'code')),
+        })
+        return true
+      },
+    }
+    const root = {
+      matches: () => false,
+      querySelector: (selector: string) => (selector === 'button' ? button : null),
+      dispatchEvent: () => true,
+    }
+    class KeyboardComponent {
+      el = root
+    }
+
+    await testComponentInvariants(KeyboardComponent, {
+      interactions: [{ pressKey: { target: 'button', key: ['Enter', 'Escape'] } }],
+      runs: 1,
+      maxInteractions: 1,
+      invariants: () => {},
+    })
+
+    expect(events).toHaveLength(2)
+    expect(events[0].type).toBe('keydown')
+    expect(events[1].type).toBe('keyup')
+    expect(events[0].key).toMatch(/^(Enter|Escape)$/)
+    expect(events[1].key).toBe(events[0].key)
+  })
+
+  it('keeps standard descriptors distinct from same-named component methods', async () => {
+    const calls: unknown[][] = []
+    const input = {
+      tagName: 'INPUT',
+      type: 'text',
+      value: '',
+      dispatchEvent: () => true,
+    }
+    const root = {
+      matches: () => false,
+      querySelector: () => input,
+      dispatchEvent: () => true,
+    }
+    class TextComponent {
+      el = root
+
+      typeText(value: string): void {
+        calls.push([value])
+      }
+    }
+
+    await testComponentInvariants(TextComponent, {
+      interactions: [{ typeText: { target: 'input', text: 'standard' } }],
+      runs: 1,
+      maxInteractions: 1,
+      invariants: () => {},
+    })
+    expect(input.value).toBe('standard')
+
+    await testComponentInvariants(TextComponent, {
+      interactions: [{ typeText: ['component'] }],
+      runs: 1,
+      maxInteractions: 1,
+      invariants: () => {},
+    })
+    expect(calls).toEqual([['component']])
+  })
+
   it('reports invalid component methods after validating the first run instance once', async () => {
     class InvalidInteractionComponent {
       static constructed = 0
