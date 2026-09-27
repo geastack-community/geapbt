@@ -19,7 +19,9 @@
     "build": "tsup src/index.ts --format esm --dts --clean --out-dir dist",
     "test": "vitest run src",
     "test:watch": "vitest src",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "install:demo": "pnpm build && pnpm --dir examples/pbt-demo install --force --ignore-workspace --config.node-linker=hoisted",
+    "build:demo": "pnpm install:demo && pnpm --dir examples/pbt-demo build"
   },
   "author": "GeaStack Community",
   "dependencies": {

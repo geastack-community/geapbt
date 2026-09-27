@@ -173,10 +173,9 @@ const standardInteractions = {
 }
 
 type StandardInteractionName = keyof typeof standardInteractions
-type StandardInteractionInput<Name extends StandardInteractionName> =
-  (typeof standardInteractions)[Name] extends StandardInteractionDefinition<infer Options>
-    ? Options
-    : never
+type StandardInteractionInput<Name extends StandardInteractionName> = NonNullable<
+  (typeof standardInteractions)[Name]['optionsType']
+>
 type StandardInteractions = {
   [Name in StandardInteractionName]: keyof StandardInteractionInput<Name> extends never
     ? Name
