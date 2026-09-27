@@ -297,37 +297,55 @@ export async function testComponentInvariants<T extends object>(
           minLength: maxInteractions === 0 ? 0 : 1,
           maxLength: maxInteractions,
         })
+  let interactionsValidated = false
+  let interactionValidationError: unknown
+  let hasInteractionValidationError = false
 
-  await fc.assert(
-    fc.asyncProperty(
-      propsArbitrary,
-      sequenceArbitrary,
-      async (generatedProps, generatedInteractions) => {
-        const component = new ComponentType()
-        let host: HTMLElement | undefined
-        try {
-          validateComponentInteractions(component, interactions)
-          host = mountComponent(component, generatedProps)
-          invoke(component, 'flushSync')
-          await waitForComponentUpdates()
-          await options.invariants(component)
-          for (const interaction of generatedInteractions) {
-            performInteraction(component, interaction)
+  try {
+    await fc.assert(
+      fc.asyncProperty(
+        propsArbitrary,
+        sequenceArbitrary,
+        async (generatedProps, generatedInteractions) => {
+          if (hasInteractionValidationError) throw interactionValidationError
+          const component = new ComponentType()
+          let host: HTMLElement | undefined
+          try {
+            if (!interactionsValidated) {
+              interactionsValidated = true
+              try {
+                validateComponentInteractions(component, interactions)
+              } catch (error) {
+                interactionValidationError = error
+                hasInteractionValidationError = true
+                throw error
+              }
+            }
+            host = mountComponent(component, generatedProps)
             invoke(component, 'flushSync')
             await waitForComponentUpdates()
             await options.invariants(component)
-          }
-        } finally {
-          try {
-            invoke(component, 'dispose')
+            for (const interaction of generatedInteractions) {
+              performInteraction(component, interaction)
+              invoke(component, 'flushSync')
+              await waitForComponentUpdates()
+              await options.invariants(component)
+            }
           } finally {
-            host?.remove()
+            try {
+              invoke(component, 'dispose')
+            } finally {
+              host?.remove()
+            }
           }
-        }
-      },
-    ),
-    propertyOptions<[Record<string, unknown>, GeneratedInteraction[]]>(options),
-  )
+        },
+      ),
+      propertyOptions<[Record<string, unknown>, GeneratedInteraction[]]>(options),
+    )
+  } catch (error) {
+    if (hasInteractionValidationError) throw interactionValidationError
+    throw error
+  }
 }
 
 /**

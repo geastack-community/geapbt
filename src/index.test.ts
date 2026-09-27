@@ -251,6 +251,81 @@ describe('testComponentInvariants', () => {
     expect(ClickComponent.domClicks).toBe(1)
     expect(ClickComponent.methodClicks).toBe(1)
   })
+
+  it('reports invalid component methods after validating the first run instance once', async () => {
+    class InvalidInteractionComponent {
+      static constructed = 0
+      static disposed = 0
+      static lookups = 0
+
+      constructor() {
+        InvalidInteractionComponent.constructed += 1
+      }
+
+      get action(): number {
+        InvalidInteractionComponent.lookups += 1
+        return 1
+      }
+
+      dispose(): void {
+        InvalidInteractionComponent.disposed += 1
+      }
+    }
+
+    InvalidInteractionComponent.constructed = 0
+    InvalidInteractionComponent.disposed = 0
+    InvalidInteractionComponent.lookups = 0
+    await expect(
+      testComponentInvariants(
+        InvalidInteractionComponent as unknown as new () => { action: () => void; dispose(): void },
+        {
+          interactions: [{ action: [] }],
+          runs: 5,
+          maxInteractions: 0,
+          invariants: () => {},
+        },
+      ),
+    ).rejects.toThrow('action must be a function')
+
+    expect(InvalidInteractionComponent.constructed).toBe(1)
+    expect(InvalidInteractionComponent.disposed).toBe(1)
+    expect(InvalidInteractionComponent.lookups).toBe(1)
+  })
+
+  it('validates interactions using a real run instance without creating an extra instance', async () => {
+    class SideEffectComponent {
+      static constructed = 0
+      static disposed = 0
+      static methodLookups = 0
+
+      constructor() {
+        SideEffectComponent.constructed += 1
+      }
+
+      get action(): () => void {
+        SideEffectComponent.methodLookups += 1
+        return () => {}
+      }
+
+      dispose(): void {
+        SideEffectComponent.disposed += 1
+      }
+    }
+
+    SideEffectComponent.constructed = 0
+    SideEffectComponent.disposed = 0
+    SideEffectComponent.methodLookups = 0
+    await testComponentInvariants(SideEffectComponent, {
+      interactions: [{ action: [] }],
+      runs: 5,
+      maxInteractions: 0,
+      invariants: () => {},
+    })
+
+    expect(SideEffectComponent.constructed).toBe(5)
+    expect(SideEffectComponent.disposed).toBe(5)
+    expect(SideEffectComponent.methodLookups).toBe(1)
+  })
 })
 
 describe('testStoreInvariants', () => {
