@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 import { boolean, integer } from 'fast-check'
 import {
-  testComponentInvariants,
+  testComponentInvariantsAsync,
   testMixinLifecycle,
   testStoreInvariants,
   testStoreInvariantsAsync,
@@ -46,7 +46,7 @@ it('awaits asynchronous store actions before checking invariants', async () => {
 it('keeps checkbox ARIA state consistent through randomized interactions', async () => {
   const previousAttempts = new WeakMap<object, number>()
 
-  await testComponentInvariants(Checkbox, {
+  await testComponentInvariantsAsync(Checkbox, {
     props: {
       checked: 'boolean',
       disabled: 'boolean',

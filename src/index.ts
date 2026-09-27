@@ -27,6 +27,13 @@ export type MixinLifecycleOptions = TestOptions & {
 export type ComponentInvariantOptions<T extends object = object> = TestOptions & {
   props?: Record<string, PropertyInput>
   interactions?: readonly ComponentInteraction<T>[]
+  invariants: (component: T) => void
+  maxInteractions?: number
+}
+
+export type ComponentAsyncInvariantOptions<T extends object = object> = TestOptions & {
+  props?: Record<string, PropertyInput>
+  interactions?: readonly ComponentInteraction<T>[]
   invariants: (component: T) => void | Promise<void>
   maxInteractions?: number
 }
@@ -438,9 +445,94 @@ export function testMixinLifecycle(options: MixinLifecycleOptions): void {
  * Fuzz generated component props and interaction sequences, checking the
  * supplied invariant before and after each interaction.
  */
-export async function testComponentInvariants<T extends object>(
+export function testComponentInvariants<T extends object>(
   ComponentType: Constructor<T>,
   options: ComponentInvariantOptions<T>,
+): void {
+  const props = options.props ?? {}
+  const propNames = Object.keys(props)
+  const propsArbitrary: fc.Arbitrary<Record<string, unknown>> =
+    propNames.length === 0
+      ? fc.constant({})
+      : fc.record(
+          Object.fromEntries(propNames.map((name) => [name, toArbitrary(props[name])])) as Record<
+            string,
+            fc.Arbitrary<unknown>
+          >,
+        )
+  const interactions = options.interactions ?? []
+  const maxInteractions = options.maxInteractions ?? Math.max(1, interactions.length * 3)
+
+  if (!Number.isInteger(maxInteractions) || maxInteractions < 0) {
+    throw new RangeError('maxInteractions must be a non-negative integer')
+  }
+  const interactionArbitraries = interactions.map((interaction) =>
+    toInteractionArbitrary(interaction),
+  )
+  const sequenceArbitrary =
+    interactionArbitraries.length === 0
+      ? fc.constant([] as GeneratedInteraction[])
+      : fc.array(fc.oneof(...interactionArbitraries), {
+          minLength: maxInteractions === 0 ? 0 : 1,
+          maxLength: maxInteractions,
+        })
+  let interactionsValidated = false
+  let interactionValidationError: unknown
+  let hasInteractionValidationError = false
+
+  try {
+    fc.assert(
+      fc.property(
+        propsArbitrary,
+        sequenceArbitrary,
+        (generatedProps, generatedInteractions) => {
+          if (hasInteractionValidationError) throw interactionValidationError
+          const component = new ComponentType()
+          let host: HTMLElement | undefined
+          try {
+            if (!interactionsValidated) {
+              interactionsValidated = true
+              try {
+                validateComponentInteractions(component, interactions)
+              } catch (error) {
+                interactionValidationError = error
+                hasInteractionValidationError = true
+                throw error
+              }
+            }
+            host = mountComponent(component, generatedProps)
+            invoke(component, 'flushSync')
+            options.invariants(component)
+            for (const interaction of generatedInteractions) {
+              performInteraction(component, interaction)
+              invoke(component, 'flushSync')
+              options.invariants(component)
+            }
+          } finally {
+            try {
+              invoke(component, 'dispose')
+            } finally {
+              host?.remove()
+            }
+          }
+
+        },
+      ),
+      propertyOptions<[Record<string, unknown>, GeneratedInteraction[]]>(options),
+    )
+  } catch (error) {
+    if (hasInteractionValidationError) throw interactionValidationError
+    throw error
+  }
+}
+
+/**
+ * Run randomized component interactions while awaiting batched updates and
+ * asynchronous invariant checks.
+ */
+export async function testComponentInvariantsAsync<T extends object>(
+  ComponentType: Constructor<T>,
+  options: ComponentAsyncInvariantOptions<T>,
 ): Promise<void> {
   const props = options.props ?? {}
   const propNames = Object.keys(props)

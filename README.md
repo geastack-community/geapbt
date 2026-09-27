@@ -6,7 +6,7 @@
 > geastack-community domain and package namespace.
 
 `@geastack-community/geapbt` is a property-based test helper for Gea mixins, components, and stores. It has no direct dependencies on Vitest or Jest; when called, it executes tests on the spot. Exceptions are propagated to the calling test runner.
-`testStoreInvariants` and mixin lifecycle hooks are synchronous. Their asynchronous counterparts return Promises and should be awaited. Component invariants may also be asynchronous; `testComponentInvariants` waits for Gea's batched DOM updates before the next check.
+`testStoreInvariants` and `testComponentInvariants` are synchronous APIs. Their asynchronous counterparts, `testStoreInvariantsAsync` and `testComponentInvariantsAsync`, return Promises and should be awaited.
 
 ## Install
 
@@ -21,11 +21,11 @@ If you are using the DOM, please run the test in a DOM environment, such as Vite
 
 ```ts
 import { expect, test } from 'vitest'
-import { testComponentInvariants } from '@geastack-community/geapbt'
+import { testComponentInvariantsAsync } from '@geastack-community/geapbt'
 import Checkbox from './Checkbox'
 
 test('Checkbox invariants', async () => {
-  await testComponentInvariants(Checkbox, {
+  await testComponentInvariantsAsync(Checkbox, {
     props: {
       checked: 'boolean',
       indeterminate: 'boolean',
@@ -44,8 +44,9 @@ test('Checkbox invariants', async () => {
 Props can be defined as `‘boolean’`, `‘string’`, `‘number’`, `‘integer’`, a constant value, 
 `Arbitrary` from `fast-check`, or a function that returns a value.
 Each component is rendered after setting its generated props for each run, and is disposed of after validation.
-Gea batches DOM updates after events, so this helper returns a Promise and must be awaited.
-Invariant callbacks may also be async. `click` dispatches a click event on the root element,
+The synchronous helper flushes Gea updates before each invariant check. Use
+`testComponentInvariantsAsync` when invariants need to await batched DOM updates or
+return Promises. `click` dispatches a click event on the root element,
 and `pressSpace` dispatches keydown and keyup events for the Space key.
 Argument-taking standard interactions use an object descriptor, separate from
 the array descriptor for component methods:

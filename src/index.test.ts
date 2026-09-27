@@ -3,6 +3,7 @@ import { boolean, integer } from 'fast-check'
 import { Component } from '@geajs/core'
 import {
   testComponentInvariants,
+  testComponentInvariantsAsync,
   testMixinLifecycle,
   testStoreInvariants,
   testStoreInvariantsAsync,
@@ -55,6 +56,27 @@ describe('testMixinLifecycle', () => {
 })
 
 describe('testComponentInvariants', () => {
+  it('provides a separate asynchronous API for async invariants', async () => {
+    const checks: string[] = []
+    class AsyncComponent {
+      dispose(): void {}
+      template(): HTMLElement {
+        return document.createElement('div')
+      }
+    }
+
+    await testComponentInvariantsAsync(AsyncComponent, {
+      runs: 1,
+      maxInteractions: 0,
+      invariants: async () => {
+        await Promise.resolve()
+        checks.push('checked')
+      },
+    })
+
+    expect(checks).toEqual(['checked'])
+  })
+
   it('generates props and dispatches randomized interactions', async () => {
     let rendered = 0
     let appended = 0
@@ -422,7 +444,7 @@ describe('testComponentInvariants', () => {
     expect(calls).toEqual([['component']])
   })
 
-  it('reports invalid component methods after validating the first run instance once', async () => {
+  it('reports invalid component methods after validating the first run instance once', () => {
     class InvalidInteractionComponent {
       static constructed = 0
       static disposed = 0
@@ -445,7 +467,7 @@ describe('testComponentInvariants', () => {
     InvalidInteractionComponent.constructed = 0
     InvalidInteractionComponent.disposed = 0
     InvalidInteractionComponent.lookups = 0
-    await expect(
+    expect(() =>
       testComponentInvariants(
         InvalidInteractionComponent as unknown as new () => { action: () => void; dispose(): void },
         {
@@ -455,7 +477,7 @@ describe('testComponentInvariants', () => {
           invariants: () => {},
         },
       ),
-    ).rejects.toThrow('action must be a function')
+    ).toThrow('action must be a function')
 
     expect(InvalidInteractionComponent.constructed).toBe(1)
     expect(InvalidInteractionComponent.disposed).toBe(1)
