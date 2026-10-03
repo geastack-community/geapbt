@@ -1,8 +1,8 @@
 # geapbt
 
-> Geastack Community is an independent community project and is not
+> GeaStack Community is an independent community project and is not
 > affiliated with or endorsed by Gea. Gea has granted permission for the
-> project to use the 'Geastack Community' name and associated
+> project to use the 'GeaStack Community' name and associated
 > geastack-community domain and package namespace.
 
 `@geastack-community/geapbt` is a property-based test helper for Gea mixins, components, and stores. It has no direct dependencies on Vitest or Jest; when called, it executes tests on the spot. Exceptions are propagated to the calling test runner.
