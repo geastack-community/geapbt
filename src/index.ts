@@ -420,8 +420,6 @@ async function waitForComponentUpdates(): Promise<void> {
  * the supplied mixins. Optional invariants run after initialization.
  */
 export function testMixinLifecycle(options: MixinLifecycleOptions): void {
-  const runs = getRuns(options)
-
   fc.assert(
     fc.property(fc.constant(options.mixins), (mixins) => {
       let Mixed: ComponentConstructor = Component
