@@ -1,4 +1,4 @@
-import { Component } from '@geajs/core'
+import { Component, Store } from '@geajs/core'
 import type { ComponentConstructor, Constructor, Mixin } from '@geastack-community/utils'
 import * as fc from 'fast-check'
 
@@ -19,9 +19,12 @@ export type TestOptions = {
   seed?: number
 }
 
-export type MixinLifecycleOptions = TestOptions & {
+export type MixinLifecycleSuperClass = 'component' | 'store' | 'plain' | 'plainDisposable'
+
+export type MixinLifecycleOptions<T = Component> = TestOptions & {
   mixins: readonly Mixin[]
-  invariants?: (instance: Component) => void
+  invariants?: (instance: T) => void
+  superClass?: MixinLifecycleSuperClass
 }
 
 export type ComponentInvariantOptions<T extends object = object> = TestOptions & {
@@ -376,7 +379,7 @@ async function invokeAsync(
   await Reflect.apply(method, target, args)
 }
 
-function assertInvariants<T extends object>(invariants: (value: T) => void, value: T): void {
+function assertInvariants<T>(invariants: (value: T) => void, value: T): void {
   assertSynchronous(invariants(value), 'invariants')
 }
 
@@ -415,24 +418,47 @@ async function waitForComponentUpdates(): Promise<void> {
   await new Promise<void>((resolve) => queueMicrotask(resolve))
 }
 
+function resolveMixinLifecycleBase(superClass: MixinLifecycleSuperClass): new () => object {
+  switch (superClass) {
+    case 'store':
+      return Store
+    case 'plain':
+      return class PlainMixinBase {}
+    case 'plainDisposable':
+      return class PlainDisposableMixinBase {
+        dispose(): void {}
+      }
+    case 'component':
+    default:
+      return Component
+  }
+}
+
 /**
- * Repeatedly compose, construct, initialize, and dispose a Gea Component with
- * the supplied mixins. Optional invariants run after initialization.
+ * Repeatedly compose, construct, initialize, and dispose a base class instance
+ * with the supplied mixins. Optional invariants run after initialization.
  */
-export function testMixinLifecycle(options: MixinLifecycleOptions): void {
+export function testMixinLifecycle<T = Component>(
+  options: MixinLifecycleOptions<T>,
+): void {
   fc.assert(
     fc.property(fc.constant(options.mixins), (mixins) => {
-      let Mixed: ComponentConstructor = Component
+      const superClass = options.superClass ?? 'component'
+      const BaseClass = resolveMixinLifecycleBase(superClass)
+      let Mixed: new (...args: any[]) => object = BaseClass
       for (const mixin of mixins) {
         Mixed = mixin(Mixed)
       }
-      const instance = new Mixed()
+      const instance = new Mixed() as T
+      if (superClass === 'plainDisposable' && typeof (instance as any).dispose !== 'function') {
+        throw new TypeError('A plainDisposable mixin lifecycle requires a dispose() method')
+      }
       try {
-        invoke(instance, 'created', [Reflect.get(instance, 'props')])
-        invoke(instance, 'flushSync')
+        invoke(instance as object, 'created', [Reflect.get(instance as object, 'props')])
+        invoke(instance as object, 'flushSync')
         if (options.invariants) assertInvariants(options.invariants, instance)
       } finally {
-        invoke(instance, 'dispose')
+        invoke(instance as object, 'dispose')
       }
     }),
     propertyOptions(options),

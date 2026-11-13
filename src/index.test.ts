@@ -53,6 +53,48 @@ describe('testMixinLifecycle', () => {
     })
     expect(checked).toBe(2)
   })
+
+  it('supports non-component superclass selection', () => {
+    const calls: string[] = []
+    const withTrackedLifecycle = <TBase extends new (...args: any[]) => object>(Base: TBase) => {
+      return class extends Base {
+        created(): void {
+          calls.push('created')
+        }
+
+        dispose(): void {
+          calls.push('dispose')
+        }
+      }
+    }
+
+    testMixinLifecycle({
+      mixins: [withTrackedLifecycle],
+      superClass: 'plain',
+      runs: 2,
+    })
+
+    expect(calls).toEqual(['created', 'dispose', 'created', 'dispose'])
+  })
+
+  it('supports plain disposable lifecycle classes', () => {
+    const calls: string[] = []
+    const withPlainDispose = <TBase extends new (...args: any[]) => object>(Base: TBase) => {
+      return class extends Base {
+        dispose(): void {
+          calls.push('dispose')
+        }
+      }
+    }
+
+    testMixinLifecycle({
+      mixins: [withPlainDispose],
+      superClass: 'plainDisposable',
+      runs: 2,
+    })
+
+    expect(calls).toEqual(['dispose', 'dispose'])
+  })
 })
 
 describe('testComponentInvariants', () => {
