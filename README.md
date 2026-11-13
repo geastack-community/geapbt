@@ -158,9 +158,15 @@ errors fail the property and are reported by fast-check.
 
 ## Mixin lifecycle
 
-A mixin is composed sequentially using `Component` from `@geajs/core` as its base class, and during each run, it executes 
-`created(props)` and `dispose()`. It does not perform DOM rendering or 
-`onAfterRender()`. You can also specify any additional invariants.
+A mixin is composed sequentially using a base class selected by `superClass`.
+The default is `component`, but you can also select `store`, `plain`, or the
+plain-specific `plainDisposable` mode. In `plainDisposable`, the base is a plain
+class that guarantees a `dispose()` method exists, which is useful when the mixin
+only needs cleanup semantics without Gea component state.
+During each run, the helper invokes `created(props)` and `dispose()` when those
+methods exist, and it skips lifecycle methods that are not present on the chosen
+base class. It does not perform DOM rendering or `onAfterRender()`. You can also
+specify any additional invariants.
 
 ```ts
 import { expect, test } from 'vitest'
